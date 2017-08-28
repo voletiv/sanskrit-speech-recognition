@@ -1,26 +1,13 @@
-# READING DEVANAGARI DOCUMENTS
-# Read devanagari text - https://www.quora.com/How-can-I-read-Hindi-data-in-Python
-# Split into clusters - https://stackoverflow.com/questions/6805311/playing-around-with-devanagari-characters
-# https://whatilearned2day.wordpress.com/2015/09/13/understanding-unicode-in-python-and-writing-text-in-devanagri-script/
-# Unicode standard specification - http://www.unicode.org/versions/Unicode6.0.0/ch04.pdf
-# Devanagari unicode data 0900 to 097F - http://unicode.org/charts/PDF/U0900.pdf
-# Telugu unicode data 0C00 to 0C7F - http://unicode.org/charts/PDF/U0C00.pdf
-
-# For compatibility between Python2 and Python3
-from __future__ import print_function
-
 import os
 import unicodedata
 
-rootDir = '/home/voletiv/GitHubRepos/sanskrit-speech-recognition'
+from devanagari_functions import *
 
-# Devanagari digits
-devanagariDigits = ['\u0966', '\u0967', '\u0968', '\u0969',
-                    '\u096A', '\u096B', '\u096C', '\u096D', '\u096E', '\u096F']
+rootDir = os.path.dirname(os.path.realpath(__file__))
+
 devanagariDoubleDanda = '\u0965'
 devanagariDanda = '\u0964'
 hyphen = '\u002D'
-
 
 ###############################################################################
 # CLEAN FILE
@@ -28,14 +15,10 @@ hyphen = '\u002D'
 
 # File without extras:
 # only with the shlokas (including "__ uvaaca"), shloka numbers
-fileName = os.path.join(rootDir, 'docs/BG-e.txt')
+fileName = os.path.join(rootDir, 'docs/BG-edited.txt')
 
-# Read all characters
-with open(fileName, encoding='utf-8') as f:
-    fileText = f.read()
-
-# Split lines
-fileLines = fileText.split('\n')
+# Read file
+fileLines = read_unicode_file(fileName)
 
 # Remove blank lines
 fileLines = list(filter(('').__ne__, fileLines))
@@ -52,28 +35,31 @@ for i, line in enumerate(fileLines):
 # Again remove blank lines
 fileLines = list(filter(('').__ne__, fileLines))
 
-y = fileLines
-
 # Add stop character after every line
-for i, line in enumerate(y):
-    y[i] += devanagariDanda
+for i, line in enumerate(fileLines):
+    fileLines[i] += devanagariDanda
 
 # Write clean file
-f = open(os.path.join(rootDir, 'docs/BG-clean.txt'), 'w')
-for line in y:
-    success = f.write(line + '\n')
+fileName = os.path.join(rootDir, 'docs/BG-clean.txt')
+write_unicode_file(fileName, fileLines)
+
+
+###############################################################################
+# FIND MAXLEN OF SHLOK CHARACTER LINES
+###############################################################################
 
 # Find maxlen
 maxlen = 0
-for line in y:
+for line in fileLines:
     if len(line) > maxlen:
         maxlen = len(line)
 
+# maxlen = 56
 print("maxlen =", maxlen)
 
 
 ###############################################################################
-# READ DOCUMENTS
+# READ DOCUMENTS (examples)
 ###############################################################################
 
 # FULL
@@ -82,26 +68,11 @@ print("maxlen =", maxlen)
 fileName = os.path.join(rootDir, 'docs/BG-clean.txt')
 
 # Read all characters
-with open(fileName, encoding='utf-8') as f:
-    BG = f.read()
-
-# Split lines
-BG = BG.split('\n')
+BG = read_unicode_file(fileName)
 
 # Replace with numbers
-# 0 = OOV, 1 = space, 2 = \u0900, ... 101 = stopChar = '|', ... 130 = \u097F
-yIdx = []
-# Convert to numbers (starting at 1)
-for line in BG:
-    yLine = []
-    for char in line:
-        if char == ' ':
-            yLine.append(1)
-        else:
-            yLine.append(ord(char) - ord('\u0900') + 1)
-    yIdx.append(yLine)
-
-yIdxPad = sequence.pad_sequences(yIdx, padding='post')
+yIdx = unicode_file_to_idx_sequences(BG, pad=True, padding='post',
+                                        maxlen=maxlen)
 
 
 # CHAPTER 01
@@ -109,27 +80,66 @@ yIdxPad = sequence.pad_sequences(yIdx, padding='post')
 # File without extras; only with the shlokas, and "__ uvaaca"
 fileName = os.path.join(rootDir, 'docs/BG-clean-C01.txt')
 
-# Read all characters
-with open(fileName, encoding='utf-8') as f:
-    fileText01 = f.read()
-
-# Split lines
-fileLines01 = fileText01.split('\n')
+# Read file
+fileLines01 = read_unicode_file(fileName)
 
 # Replace with numbers
-# 0 = OOV, 1 = space, 2 = \u0900, ... 101 = stopChar = '|', ... 130 = \u097F
-yIdx = []
-# Convert to numbers (starting at 1)
-for line in y:
-    yLine = []
-    for char in line:
-        if char == ' ':
-            yLine.append(1)
-        else:
-            yLine.append(ord(char) - ord('\u0900') + 1)
-    yIdx.append(yLine)
+yIdx01 = unicode_file_to_idx_sequences(fileLines01, pad=True, padding='post',
+                                        maxlen=maxlen)
 
-yIdxPad = sequence.pad_sequences(yIdx, padding='post')
+
+###############################################################################
+# SPLIT SHLOKAS INTO SYLLABLE (guru and laghu)
+###############################################################################
+
+# RUN
+
+# Read shlokas
+fileName = os.path.join(rootDir, 'docs/BG-clean.txt')
+BG = read_unicode_file(fileName)
+
+# Make shlokasSyllables, allSyllables for shlokasLines
+shlokasSyllables, allSyllables = shlokas_to_syllables(BG)
+
+# Find all unique syllables, and frequency
+uniqueSyllables = set(allSyllables)
+uniqueSyllablesCount = {syllable:allSyllables.count(syllable) for syllable in uniqueSyllables}
+
+# Find all shlokLengths
+shlokLengths = shlok_lengths(shlokasSyllables)
+
+# Save shlokLengths and indices
+np.save(os.path.join(rootDir, "docs/shlokLengths.npy"), shlokLengths)
+
+# Read shlokLengths
+shlokLengths = np.load(os.path.join(rootDir, "docs/shlokLengths.npy")).item()
+
+# Find number of shlokas of each length
+for key in sorted(shlokLengths.keys()):
+    print(key, len(shlokLengths[key]))
+# 11 215
+# 12 5 : [118, 119, 177, 710, 1303]
+# 16 1291
+# 17 1 : मदनुग्रहाय परमं गुह्यमध्यात्मसंज्ञितम् ॥ ११-१॥(1)
+
+# Make binary syllables
+shlokasBinarySyllables = binarize_shlokas_syllables(shlokasSyllables)
+
+# Check anushtubh chandas
+# 5th, 6th of first & third padas are like '01'
+# shlokasBinarySyllables[s][4] = 0, shlokasBinarySyllables[s][5] = 1
+# 5th, 6th, 7th of second & fourth padas are like '010'
+# shlokasBinarySyllables[s][12] = 0, shlokasBinarySyllables[s][13] = 1, shlokasBinarySyllables[s][14] = 0
+for s, shlok in enumerate(shlokasSyllables):
+    if len(shlok) == 16:
+        if shlokasBinarySyllables[s][4] != 0 or shlokasBinarySyllables[s][5] != 1 \
+                or shlokasBinarySyllables[s][12] != 0 or shlokasBinarySyllables[s][13] != 1 \
+                or shlokasBinarySyllables[s][14] != 0:
+            print(s)
+            print(shlok)
+            print(shlokasSyllables[s])
+            print(shlokasBinarySyllables[s])
+            break
 
 
 ###############################################################################
@@ -209,191 +219,15 @@ for c in chars:
 # 'DEVANAGARI VOWEL SIGN PRISHTHAMATRA E': 'ॎ'
 # 'DEVANAGARI VOWEL SIGN AW': 'ॏ'
 
+
 ###############################################################################
-# SPLIT SHLOKAS INTO SOUNDS
+# TESTING (incomplete)
 ###############################################################################
 
+# TEST SPLIT_INTO_SYLLABLES
 
-def split_into_sounds(s, debug=False):
-    """Generate the sound clusters for the string s."""
-    # Initializations
-    # Virama/halant: '्'
-    devanagariVirama = u'\N{DEVANAGARI SIGN VIRAMA}'
-    # Anusvara: 'ं'
-    devanagariAnusvara = u'\N{DEVANAGARI SIGN ANUSVARA}'
-    # Visarga: 'ः'
-    devanagariVisarga = u'\N{DEVANAGARI SIGN VISARGA}'
-    # Avagraha: 'ऽ'
-    devanagariAvagraha = u'\N{DEVANAGARI SIGN AVAGRAHA}'
-    sound = u''
-    lastCharacter = ''
-    lastCategory = ''
-    character = ''
-    category = ''
-    endSound = False
-    skipCategories = ['Z', 'P']
-    skipCharacters = [devanagariAvagraha]
-    stopCharacters = [devanagariVirama, devanagariAnusvara, devanagariVisarga]
-    # For each character in string s
-    for c, character in enumerate(s):
-        if debug:
-            print(c)
-        # Find category of character
-        category = unicodedata.category(character)[0]
-        # If character is a space or a punctuation {'।', '॥', '॰'}
-        if category in skipCategories:
-            # Don't add it to sound
-            continue
-        # If character is avagraha {'ऽ'}
-        if character in skipCharacters:
-            # Don't add it to sound
-            continue
-        # If character is not space or punctuation, add it to sound
-        sound += character
-        # Find out the last-last-last-last, last-last, next
-        # and next-next characters and category:
-        # 1) Last-last-last-last character
-        try:
-            lastLastLastLastCharacter = s[c - 4]
-            lastLastLastLastCategory = unicodedata.category(
-                lastLastLastLastCharacter)[0]
-        except IndexError:
-            lastLastLastLastCharacter = ' '
-            lastLastLastLastCategory = unicodedata.category(
-                lastLastLastLastCharacter)[0]
-        # 2) Last-last character
-        try:
-            lastLastCharacter = s[c - 2]
-            lastLastCategory = unicodedata.category(lastLastCharacter)[0]
-        except IndexError:
-            lastLastCharacter = ' '
-            lastLastCategory = unicodedata.category(lastLastCharacter)[0]
-        # 3) Next character
-        try:
-            nextCharacter = s[c + 1]
-            nextCategory = unicodedata.category(nextCharacter)[0]
-            # If next character is space or punctuation, make it space so no
-            # further decision is dependent on it
-            if nextCategory in skipCategories:
-                nextCharacter = ' '
-                nextCategory = unicodedata.category(nextCharacter)[0]
-                if debug:
-                    print("nextCategory skip, new nextCharacter",
-                          unicodedata.name(nextCharacter))
-            # Else if next character is avagraha, ignore it and consider the
-            # further next character
-            elif nextCharacter in skipCharacters:
-                nextCharacter = s[c + 2]
-                nextCategory = unicodedata.category(nextCharacter)[0]
-                if debug:
-                    print("nextCharacter skip, new nextCharacter",
-                          unicodedata.name(nextCharacter))
-        except IndexError:
-            nextCharacter = ' '
-            nextCategory = unicodedata.category(nextCharacter)[0]
-        # 4) Next-next character
-        try:
-            nextNextCharacter = s[c + 2]
-            nextNextCategory = unicodedata.category(nextNextCharacter)[0]
-            # If next or next-next character is space or punctuation, make it
-            # space so no further decision is dependent on it
-            if unicodedata.category(s[c + 1])[0] in skipCategories \
-                    or nextNextCategory in skipCategories:
-                nextNextCharacter = ' '
-                nextNextCategory = unicodedata.category(nextNextCharacter)[0]
-                if debug:
-                    print("nextNextCategory skip, new nextNextCharacter",
-                          unicodedata.name(nextNextCharacter))
-            # Else if next or next-next character is avagraha, ignore it and
-            # consider the further next character
-            elif s[c + 1] in skipCharacters \
-                    or nextNextCharacter in skipCharacters:
-                nextNextCharacter = s[c + 3]
-                nextNextCategory = unicodedata.category(nextNextCharacter)[0]
-                if debug:
-                    print("nextNextCharacter skip, new nextNextCharacter",
-                          unicodedata.name(nextNextCharacter))
-        except IndexError:
-            nextNextCharacter = ' '
-            nextNextCategory = unicodedata.category(nextNextCharacter)[0]
-        # Debug print
-        if debug:
-            print(character, category, character == devanagariVirama,
-                nextNextCharacter != devanagariVirama,
-                lastLastCategory in skipCategories,
-                (lastLastCharacter ==devanagariVirama and \
-                    lastLastLastLastCategory in skipCategories),
-                character != devanagariVirama, nextCategory != 'M',
-                nextNextCharacter != devanagariVirama)
-        # General: end at virama/halant
-        # eg. धर्
-        # and next-next character is not virama, end sound
-        # eg. 'दृष्', 'ट्'
-        if character == devanagariVirama \
-                and nextNextCharacter != devanagariVirama:
-            # But not if the last-last character was space or punctuation
-            # eg. ' ', व्', 'यू'
-            # or if last-last was virama and the last-last-last-last character
-            # eg. ' ', स्त्', 'री', 'षु'
-            # was of skipCategory
-            if lastLastCategory in skipCategories \
-                or (lastLastCharacter == devanagariVirama \
-                    and lastLastLastLastCategory in skipCategories):
-                # if lastLastCategory in skipCategories:
-                endSound = False
-            else:
-                endSound = True
-        # If current is not a virama,
-        # 'रेकुरुक्'
-        # and next character is not a Mark
-        # 'म', 'म'
-        # and next-next character is not virama
-        # 'ध', 'र्'
-        if character != devanagariVirama and nextCategory != 'M' \
-                and nextNextCharacter != devanagariVirama:
-            endSound = True
-        # # Yield the sound
-        if endSound:
-            if sound:
-                if debug:
-                    print("...Yield")
-                yield sound
-                sound = u''
-            endSound = False
-
-# Make sounds length list
-shlokLengths = {}
-for i in range(len(y)):
-    if 'धृतराष्ट्र उवाच' not in y[i] \
-            and 'सञ्जय उवाच' not in y[i] and 'अर्जुन उवाच' not in y[i] \
-            and 'श्रीभगवानुवाच' not in y[i] and 'ॐ तत्सदिति' not in y[i] \
-            and 'ब्रह्मविद्यायां' not in y[i] and 'ऽध्यायः।' not in y[i]:
-        lenSounds = len(list(split_into_sounds(y[i])))
-        if lenSounds not in shlokLengths.keys():
-            shlokLengths[lenSounds] = [i]
-        else:
-            shlokLengths[lenSounds].append(i)
-
-# Save shlokLengths and indices
-np.save(os.path.join(rootDir, "docs/shlokLengths.npy"), shlokLengths)
-
-# Read shlokLengths
-shlokLengths = np.load(os.path.join(rootDir, "docs/shlokLengths.npy")).item()
-
-# Find number of shlokas of each length
-for key in sorted(shlokLengths.keys()):
-    print(key, len(shlokLengths[key]))
-
-# 11 215
-# 12 5 : [118, 119, 177, 710, 1303]
-# 16 1291
-# 17 1 : मदनुग्रहाय परमं गुह्यमध्यात्मसंज्ञितम् ॥ ११-१॥(1)
-
-
-# TEST SPLIT_INTO_SOUNDS
-
-# mySounds = list(split_into_sounds(y[6], debug=True))
-# print(len(mySounds), mySounds)
+# mySyllables = list(split_into_syllables(y[6], debug=True))
+# print(len(mySyllables), mySyllables)
 
 # Incomplete!!!
 specialShlokas11 = [114, 115, 116, 117, #॥ २-५॥
@@ -418,10 +252,10 @@ specialShlokas12 = [118, 119, 177, 710]
 specialShlokas17 = [
                     921                 #॥ ११-१॥(1)
                     ]
-# Test split_sound
+# Test split_syllable
+y = shlokasLines
 for i in range(len(y)):
-    mySounds = list(split_into_sounds(y[i]))
-    if len(mySounds) != 16 and 'धृतराष्ट्र उवाच' not in y[i] \
+    if len(shlokasSyllables[i]) != 16 and 'धृतराष्ट्र उवाच' not in y[i] \
             and 'सञ्जय उवाच' not in y[i] and 'अर्जुन उवाच' not in y[i] \
             and 'श्रीभगवानुवाच' not in y[i] and 'ॐ तत्सदिति' not in y[i] \
             and 'ब्रह्मविद्यायां' not in y[i] and 'ऽध्यायः।' not in y[i] \
@@ -429,12 +263,12 @@ for i in range(len(y)):
             and i not in specialShlokas17:
         print(i)
         print(y[i])
-        print(len(mySounds), mySounds)
+        print(len(mySyllables), mySyllables)
         break
 
 
 ###############################################################################
-# SPLIT SHLOKAS INTO SOUNDS
+# Combine two padas of a shlok
 ###############################################################################
 
 # # Combine two padas of a shlok into one line in the file
