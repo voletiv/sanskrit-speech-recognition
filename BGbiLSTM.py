@@ -1,89 +1,188 @@
 # Keras Bidirectional LSTM IMDB example - https://github.com/fchollet/keras/blob/master/examples/imdb_bidirectional_lstm.py 
 # BidirectionalLSTM with masking - http://dirko.github.io/Bidirectional-LSTMs-with-Keras/
 # Stateful LSTMs theory - http://philipperemy.github.io/keras-stateful-lstm/
+# Seq2Seq - https://chunml.github.io/ChunML.github.io/project/Sequence-To-Sequence/
+import os
 
+from keras.models import Model, Sequential
+from keras.layers import Input, Masking, LSTM, Dense, RepeatVector
+from keras.layers.wrappers import Bidirectional, TimeDistributed
+from keras.optimizers import Adam
 from keras.preprocessing import sequence
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Embedding, LSTM, Bidirectional
+from keras.utils import np_utils
 
-# MFCC sequence
-maxInputLen = ??
-inputDim = 13
+from audio_functions import *
+from devanagari_functions import *
+
+
+##############################################################################
+# PARAMS
+##############################################################################
+
+# Audio files
+audioMFCCPath = '/home/voletiv/Datasets/BG/1/BG-C15.mp3_st.npy'
+audioTimesPath = '/home/voletiv/GitHubRepos/sanskrit-speech-recognition/docs/BG-clean-C15-times.txt'
+textPath = '/home/voletiv/GitHubRepos/sanskrit-speech-recognition/docs/BG-clean-C15.txt'
+
+# MFCC SEQUENCE
+# Max input len = 1500 => 15 seconds
+maxInputLen = 1500
+inputDim = 34
+
+# Reverse input sequence
+reverseInputSequence = True
 
 # Devanagari Unicode sequence
 # maximum number of Devanagari unicode characters in a line
 maxOutputLen = 56
-# Numer of possibleunicode charaters in the dataset
-outputDim = 128
+# Numer of possible unicode charaters in the dataset
+vocabSize = 128
 
 # Embedding
 # OOV +  space + 128 devanagari = 130
 embedDim = 130
 
 # LSTM
-lstmHidDim = 108
+lstmHiddenDim = 108
+depth = 2
 
 # Encoding
 encodedDim = 128
 
-#INPUT
 
-# Read mp3 file
+##############################################################################
+# INPUT
+##############################################################################
 
-# Split into frames
+# Audio MFCC Chunks: list of 18 chunks of lengthx34
+audioMfccChunks = split_MFCC_by_audio_times(audioTimesPath=audioTimesPath,
+                                            audioMFCCPath=audioMFCCPath)
 
-# Pre-pad input sequences
-X = sequence.pad_sequences(myInput, maxlen=maxInputLen, padding='pre')
+# Reverse input sequence
+if reverseInputSequence:
+    for i, chunk in enumerate(audioMfccChunks):
+        audioMfccChunks[i] = chunk[::-1]
 
+# Pad input sequence
+audioMfccChunksPadded = sequence.pad_sequences(audioMfccChunks,
+                                                maxlen=maxInputLen,
+                                                padding='pre',
+                                                dtype='float')
+
+# Train - Val
+valSplit = 0.2
+trainX = audioMfccChunksPadded[:int((1 - valSplit) \
+                                                * len(audioMfccChunksPadded))]
+valX = audioMfccChunksPadded[int((1 - valSplit) \
+                                                * len(audioMfccChunksPadded)):]
+
+
+##############################################################################
 # OUTPUT
+##############################################################################
 
-# CHAPTER 01
+# READ DEVANAGARI TEXT
 
-# File without extras; only with the shlokas, and "__ uvaaca"         
-fileName = '/home/voletiv/BG_clean_C01.txt'
-# Read all characters
-with open(fileName, encoding='utf-8') as f:
-    fileText01 = f.read()
-# Split lines
-fileLines01 = fileText01.split('\n')
+# CHAPTER 15
+
+# File without extras; only with the shlokas, and "__ uvaaca"
+# fileName = os.path.join(rootDir, 'docs/BG-clean-C15.txt')
+fileName = textPath
+
+# Read file
+fileLines = read_unicode_file(fileName)
 
 # Replace with numbers
-# 0 = OOV, 1 = space, 2 = \u0900, ... 101 = stopChar = '|', ... 129 = \u097F
-y = fileLines01
-yIdx = []
-# Convert to numbers (starting at 1)
-for line in y:
-    yLine = []
-    for char in line:
-        if char == ' ':
-            yLine.append(1)
-        else:
-            yLine.append(ord(char) - ord('\u0900') + 1)
-    yIdx.append(yLine)
+yIdx = unicode_file_to_idx_sequences(fileLines, pad=True, padding='post',
+                                        maxlen=maxOutputLen)
 
-# Post-pad output sequences with 0
-Y = sequence.pad_sequences(yIdx, maxlen=maxOutputLen, padding='post')
+# One hot encode the numbers
+Y = np.reshape(np_utils.to_categorical(yIdx, embedDim),
+    (yIdx.shape[0], yIdx.shape[1], embedDim))
 
+trainY = Y[:int((1-valSplit)*len(audioMfccChunksPadded))]
+valY = Y[int((1-valSplit)*len(audioMfccChunksPadded)):len(audioMfccChunksPadded)]
+
+
+##############################################################################
 # MODEL
+##############################################################################
+
+depth = 2
+
+# Input
 
 myInput = Input(shape=(maxInputLen, inputDim,))
 
+# Masking
+LSTMinput = Masking(mask_value=0.)(myInput)
+
+# If depth > 1
+if depth > 1:
+    # First layer
+    encoded = LSTM(hiddenDim, activation=LSTMactiv,
+                   return_sequences=True)(LSTMinput)
+    for d in range(depth - 2):
+        encoded = LSTM(hiddenDim, activation=LSTMactiv,
+                       return_sequences=True)(encoded)
+    # Last layer
+    encoded = LSTM(hiddenDim, activation=LSTMactiv)(encoded)
+# If depth = 1
+else:
+    encoded = LSTM(hiddenDim, activation=LSTMactiv)(LSTMinput)
+
+# Encoder
+encoded = Dense(encodedDim, activation=encodedActiv)(encoded)
+
+
 # Encoder
 encoder = Sequential()
-encoder.add(Bidirectional(LSTM(lstmHidDim, input_shape=(maxInputLen, inputDim))))
+if depth > 1:
+    # First layer
+    encoder.add(Bidirectional(LSTM(lstmHiddenDim, return_sequences=True),
+        input_shape=(maxInputLen, inputDim)))
+    # Intermediate layers
+    for d in range(depth - 2):
+        encoder.add(Bidirectional(LSTM(lstmHiddenDim, return_sequences=True)
+    # Last layer
+    encoder.add(Bidirectional(LSTM(lstmHiddenDim, return_sequences=False)
+else:
+    encoder.add(Bidirectional(LSTM(lstmHiddenDim),
+        input_shape=(maxInputLen, inputDim)))
 # encoder.add(Dropout(0.5))
-encoder.add(Dense(encodedDim, activation='sigmoid'))
+encoder.add(Dense(encodedDim, activation='relu'))
 
+# Encoded
 encoded = encoder(myInput)
 
-
+# Decoder Input
+decoderInput = RepeatVector(maxOutputLen)(encoded)
 
 # Decoder
 decoder = Sequential()
-decoder.add(Bidirectional(LSTM(lstmHidDim, input_shape=(encodedDim))))
-# decoder.add(Dropout(0.5))
-decoder.add(Dense(encodedDim, activation='sigmoid'))
+decoder.add(Bidirectional(LSTM(lstmHiddenDim, return_sequences=True),
+                        input_shape=(maxOutputLen, encodedDim,)))
+decoder.add(TimeDistributed(Dense(embedDim, activation='softmax')))
 
+# Decoded
+decoded = decoder(decoderInput)
 
-model.add(Embedding(inputDim, embedDim, input_length=maxInputLen))
+# Speech Recognizer
+speechRecognizer = Model(myInput, decoded)
 
+# Compile
+adam = Adam(lr=1e-2)
+speechRecognizer.compile(loss='categorical_crossentropy',
+            optimizer='rmsprop',
+            metrics=['accuracy'])
+
+##############################################################################
+# TRAIN
+##############################################################################
+
+batchSize = 7
+nEpochs = 100
+initEpoch = 0
+
+history = speechRecognizer.fit(trainX, trainY, batch_size=batchSize, epochs=nEpochs, verbose=1,
+    validation_data=(valX, valY), initial_epoch=initEpoch)
