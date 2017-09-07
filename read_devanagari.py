@@ -3,11 +3,40 @@ import unicodedata
 
 from devanagari_functions import *
 
-rootDir = os.path.dirname(os.path.realpath(__file__))
-
 devanagariDoubleDanda = '\u0965'
 devanagariDanda = '\u0964'
 hyphen = '\u002D'
+
+
+###############################################################################
+# READ DOCUMENTS (examples)
+###############################################################################
+
+# FULL
+
+# File without extras; only with the shlokas, and "__ uvaaca"
+fileName = os.path.join(rootDir, 'docs/BG-clean.txt')
+
+# Read all characters
+BG = read_unicode_file(fileName)
+
+# Replace with numbers
+yIdx = unicode_file_to_idx_sequences(BG, pad=True, padding='post',
+                                        maxlen=maxlen)
+
+
+# CHAPTER 01
+
+# File without extras; only with the shlokas, and "__ uvaaca"
+fileName = os.path.join(rootDir, 'docs/BG-clean-C01.txt')
+
+# Read file
+fileLines01 = read_unicode_file(fileName)
+
+# Replace with numbers
+yIdx01 = unicode_file_to_idx_sequences(fileLines01, pad=True, padding='post',
+                                        maxlen=maxlen)
+
 
 ###############################################################################
 # CLEAN FILE
@@ -56,36 +85,6 @@ for line in fileLines:
 
 # maxlen = 56
 print("maxlen =", maxlen)
-
-
-###############################################################################
-# READ DOCUMENTS (examples)
-###############################################################################
-
-# FULL
-
-# File without extras; only with the shlokas, and "__ uvaaca"
-fileName = os.path.join(rootDir, 'docs/BG-clean.txt')
-
-# Read all characters
-BG = read_unicode_file(fileName)
-
-# Replace with numbers
-yIdx = unicode_file_to_idx_sequences(BG, pad=True, padding='post',
-                                        maxlen=maxlen)
-
-
-# CHAPTER 01
-
-# File without extras; only with the shlokas, and "__ uvaaca"
-fileName = os.path.join(rootDir, 'docs/BG-clean-C01.txt')
-
-# Read file
-fileLines01 = read_unicode_file(fileName)
-
-# Replace with numbers
-yIdx01 = unicode_file_to_idx_sequences(fileLines01, pad=True, padding='post',
-                                        maxlen=maxlen)
 
 
 ###############################################################################
