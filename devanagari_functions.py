@@ -37,9 +37,9 @@ def write_unicode_file(fileName, fileText):
 
 
 def unicode_file_to_idx_sequences(fileLines,
-                                        pad=True,
-                                        padding='post',
-                                        maxlen=None):
+                                    pad=True,
+                                    padding='post',
+                                    maxlen=None):
     '''Convert list of unicode character sequences to padded list of indices.'''
     # Replace with numbers
     # 0 = OOV, 1 = space, 2 = \u0900, ... 101 = stopChar = '|', ... 130 = \u097F
